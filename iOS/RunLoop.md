@@ -29,12 +29,12 @@ NSRunLoop 是基于 CFRunLoopRef 的封装，提供了面向对象的 API，但�
 苹果不允许直接创建 RunLoop，它只提供了两个自动获取的函数：`CFRunLoopGetMain()` 和 `CFRunLoopGetCurrent()`。 这两个函数内部的逻辑大概是下面这样:
 
 ```C
-/// 全局的Dictionary，key 是 pthread_t， value 是 CFRunLoopRef
+//全局的Dictionary，key 是 pthread_t， value 是 CFRunLoopRef
 static CFMutableDictionaryRef loopsDic;
-/// 访问 loopsDic 时的锁
+// 访问 loopsDic 时的锁
 static CFSpinLock_t loopsLock;
  
-/// 获取一个 pthread 对应的 RunLoop。
+// 获取一个 pthread 对应的 RunLoop。
 CFRunLoopRef _CFRunLoopGet(pthread_t thread) {
     OSSpinLockLock(&loopsLock);
     
@@ -45,14 +45,14 @@ CFRunLoopRef _CFRunLoopGet(pthread_t thread) {
         CFDictionarySetValue(loopsDic, pthread_main_thread_np(), mainLoop);
     }
     
-    /// 直接从 Dictionary 里获取。
+    // 直接从 Dictionary 里获取。
     CFRunLoopRef loop = CFDictionaryGetValue(loopsDic, thread));
     
     if (!loop) {
-        /// 取不到时，创建一个
+        // 取不到时，创建一个
         loop = _CFRunLoopCreate();
         CFDictionarySetValue(loopsDic, thread, loop);
-        /// 注册一个回调，当线程销毁时，顺便也销毁其对应的 RunLoop。
+        // 注册一个回调，当线程销毁时，顺便也销毁其对应的 RunLoop。
         _CFSetTSD(..., thread, loop, __CFFinalizeRunLoop);
     }
     
