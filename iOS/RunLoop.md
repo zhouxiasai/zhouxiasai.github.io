@@ -456,11 +456,13 @@ CFRunLoop {
 ```
 
 可以看到，系统默认注册了5个Mode:
-\1. kCFRunLoopDefaultMode: App的默认 Mode，通常主线程是在这个 Mode 下运行的。
-\2. UITrackingRunLoopMode: 界面跟踪 Mode，用于 ScrollView 追踪触摸滑动，保证界面滑动时不受其他 Mode 影响。
-\3. UIInitializationRunLoopMode: 在刚启动 App 时第进入的第一个 Mode，启动完成后就不再使用。
-4: GSEventReceiveRunLoopMode: 接受系统事件的内部 Mode，通常用不到。
-5: kCFRunLoopCommonModes: 这是一个占位的 Mode，没有实际作用。
+
+1. kCFRunLoopDefaultMode: App的默认 Mode，通常主线程是在这个 Mode 下运行的。
+
+2. UITrackingRunLoopMode: 界面跟踪 Mode，用于 ScrollView 追踪触摸滑动，保证界面滑动时不受其他 Mode 影响。
+3. UIInitializationRunLoopMode: 在刚启动 App 时第进入的第一个 Mode，启动完成后就不再使用。
+4. GSEventReceiveRunLoopMode: 接受系统事件的内部 Mode，通常用不到。
+5. kCFRunLoopCommonModes: 这是一个占位的 Mode，没有实际作用。
 
 你可以在[这里](http://iphonedevwiki.net/index.php/CFRunLoop)看到更多的苹果内部的 Mode，但那些 Mode 在开发中就很难遇到了。
 
@@ -481,6 +483,7 @@ CFRunLoop {
  
         /// 4. 触发 Source0 (非基于port的) 回调。
         __CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE0_PERFORM_FUNCTION__(source0);
+        /// 5. GCD处理main block
         __CFRUNLOOP_IS_CALLING_OUT_TO_A_BLOCK__(block);
  
         /// 6. 通知Observers，即将进入休眠
@@ -609,7 +612,7 @@ NSURLConnectionLoader 中的 RunLoop 通过一些基于 mach port 的 Source 接
 
 ### RunLoop 的实际应用举例
 
-### AsyncDisplayKit
+#### 1. AsyncDisplayKit
 
 [AsyncDisplayKit](https://github.com/facebook/AsyncDisplayKit) 是 Facebook 推出的用于保持界面流畅性的框架，其原理大致如下：
 
@@ -625,3 +628,138 @@ UI对象操作通常包括 UIView/CALayer 等 UI 对象的创建、设置属性�
 
 ASDK 仿照 QuartzCore/UIKit 框架的模式，实现了一套类似的界面更新的机制：即在主线程的 RunLoop 中添加一个 Observer，监听了 kCFRunLoopBeforeWaiting 和 kCFRunLoopExit 事件，在收到回调时，遍历所有之前放入队列的待处理的任务，然后一一执行。
 具体的代码可以看这里：[_ASAsyncTransactionGroup](https://github.com/facebook/AsyncDisplayKit/blob/master/AsyncDisplayKit%2FDetails%2FTransactions%2F_ASAsyncTransactionGroup.m)。
+
+#### 2. 监测应用卡顿
+
+原理：所有 APP 内用户的事件都是 Source0 的 item，而 RunLoop 处理 source0 的事件是在 `kCFRunLoopBeforeTimers`和`kCFRunLoopBeforeWaiting` 之间执行的。我们只需要统计主线程在 RunLoop 的一个事件循环中，在`kCFRunLoopBeforeTimers`和`kCFRunLoopBeforeWaiting` 之间所消耗的时间，即可监测应用是否卡顿。具体实现如下：
+
+1. 创建子线程，在子线程启动时，启动其 RunLoop
+
+```objective-c
++ (instancetype)shareMonitor {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        instance = [[[self class] alloc] init];
+        instance.monitorThread = [[NSThread alloc] initWithTarget:self 
+                                  selector:@selector(monitorThreadEntryPoint) object:nil];
+        [instance.monitorThread start];
+    });
+    return instance;
+}
+
++ (void)monitorThreadEntryPoint {
+    @autoreleasepool {
+        [[NSThread currentThread] setName:@"FluencyMonitor"];
+        NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
+        [runLoop addPort:[NSMachPort port] forMode:NSDefaultRunLoopMode];
+        [runLoop run];
+    }
+}
+```
+
+2. 在开始监测时，往主线程的RunLoop中添加一个observer，并往子线程中添加一个定时器，每隔一定时间(1/30s)检测一次耗时的时长。
+
+```objective-c
+- (void)start
+{
+    if (_observer) {
+        return;
+    }
+    
+    // 1.创建observer
+    CFRunLoopObserverContext context = {0,(__bridge void*)self, NULL, NULL, NULL};
+    _observer = CFRunLoopObserverCreate(kCFAllocatorDefault,
+                                        kCFRunLoopAllActivities,
+                                        YES,
+                                        0,
+                                        &runLoopObserverCallBack,
+                                        &context);
+    // 2.将observer添加到主线程的RunLoop中
+    CFRunLoopAddObserver(CFRunLoopGetMain(), _observer, kCFRunLoopCommonModes);
+    
+    // 3.创建一个timer，并添加到子线程的RunLoop中
+    [self performSelector:@selector(addTimerToMonitorThread) onThread:self.monitorThread withObject:nil waitUntilDone:NO modes:@[NSRunLoopCommonModes]];
+}
+
+- (void)addTimerToMonitorThread
+{
+    if (_timer) {
+        return;
+    }
+    // 创建一个timer
+    CFRunLoopRef currentRunLoop = CFRunLoopGetCurrent();
+    CFRunLoopTimerContext context = {0, (__bridge void*)self, NULL, NULL, NULL};
+    _timer = CFRunLoopTimerCreate(kCFAllocatorDefault, 0.1, 0.01, 0, 0,
+                                                   &runLoopTimerCallBack, &context);
+    // 添加到子线程的RunLoop中
+    CFRunLoopAddTimer(currentRunLoop, _timer, kCFRunLoopCommonModes);
+}
+```
+
+3. 补充观察者的回调处理
+
+```objective-c
+static void runLoopObserverCallBack(CFRunLoopObserverRef observer, CFRunLoopActivity activity, void *info){
+    FluencyMonitor *monitor = (__bridge FluencyMonitor*)info;
+    NSLog(@"MainRunLoop---%@",[NSThread currentThread]);
+    switch (activity) {
+        case kCFRunLoopEntry:
+            NSLog(@"kCFRunLoopEntry");
+            break;
+        case kCFRunLoopBeforeTimers:
+            NSLog(@"kCFRunLoopBeforeTimers");
+            break;
+        case kCFRunLoopBeforeSources:
+            NSLog(@"kCFRunLoopBeforeSources");
+            ///记录开始处理事件的时间
+            monitor.startDate = [NSDate date];
+            monitor.excuting = YES;
+            break;
+        case kCFRunLoopBeforeWaiting:
+            NSLog(@"kCFRunLoopBeforeWaiting");
+            ///事件处理完毕
+            monitor.excuting = NO;
+            break;
+        case kCFRunLoopAfterWaiting:
+            NSLog(@"kCFRunLoopAfterWaiting");
+            break;
+        case kCFRunLoopExit:
+            NSLog(@"kCFRunLoopExit");
+            break;
+        default:
+            break;
+    }
+}
+```
+
+4. 补充 timer 的回调处理，超时则处理堆栈信息
+
+```objective-c
+static void runLoopTimerCallBack(CFRunLoopTimerRef timer, void *info) {
+    FluencyMonitor *monitor = (__bridge FluencyMonitor*)info;
+    if (!monitor.excuting) {
+        return;
+    }
+    
+    // 如果主线程正在执行任务，并且这一次loop 执行到 现在还没执行完，那就需要计算时间差
+    NSTimeInterval excuteTime = [[NSDate date] timeIntervalSinceDate:monitor.startDate];
+    NSLog(@"定时器---%@",[NSThread currentThread]);
+    NSLog(@"主线程执行了---%f秒",excuteTime);
+    
+    if (excuteTime >= 1/60.f) {
+        NSLog(@"线程卡顿了%f秒",excuteTime);
+        [monitor handleStackInfo];
+    }
+}
+
+- (void)handleStackInfo {
+    NSData *lagData = [[[PLCrashReporter alloc]
+                        initWithConfiguration:[[PLCrashReporterConfig alloc] 
+initWithSignalHandlerType:PLCrashReporterSignalHandlerTypeBSD symbolicationStrategy:PLCrashReporterSymbolicationStrategyAll]] generateLiveReport];
+    PLCrashReport *lagReport = [[PLCrashReport alloc] initWithData:lagData error:NULL];
+    NSString *lagReportString = [PLCrashReportTextFormatter stringValueForCrashReport:lagReport withTextFormat:PLCrashReportTextFormatiOS];
+    //将字符串上传服务器
+    NSLog(@"lag happen, detail below: \n %@",lagReportString);
+}
+```
+
