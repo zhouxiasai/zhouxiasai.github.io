@@ -167,7 +167,7 @@ OC在想一个对象发送消息时，runtime根据对象的isa指针找到对�
 
 1. **Method resolution**
 
-​    **OC**运行时会调用 `+(BOOL)resolveInstanceMethod:` 或者 +(BOOL)resolveClassMethod: 在该函数中可以为类添加实现。注：该方法只要返回NO 即使已经添加了实现也不会执行，返回YES会检查是否实现，实现也不会执行，到下一步：message forwarding。
+​    **OC**运行时会调用 `+(BOOL)resolveInstanceMethod:` 或者 `+(BOOL)resolveClassMethod: `在该函数中可以为类添加实现。注：该方法只要返回NO 即使已经添加了实现也不会执行，返回YES会检查是否实现，实现也不会执行，到下一步：message forwarding。
 
 2. **fast forwarding**
 
