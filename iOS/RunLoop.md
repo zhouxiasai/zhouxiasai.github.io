@@ -305,7 +305,7 @@ Mach 本身提供的 API 非常有限，而且苹果也不鼓励使用 Mach 的 
 
 Mach 的消息定义是在 <mach/message.h> 头文件的，很简单：
 
-```objective-c
+```obj
 typedef struct {
   mach_msg_header_t header;
   mach_msg_body_t body;
@@ -762,4 +762,3 @@ initWithSignalHandlerType:PLCrashReporterSignalHandlerTypeBSD symbolicationStrat
     NSLog(@"lag happen, detail below: \n %@",lagReportString);
 }
 ```
-

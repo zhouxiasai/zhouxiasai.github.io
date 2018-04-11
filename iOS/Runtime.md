@@ -165,15 +165,15 @@ id _Nullable objc_msgSendSuper(struct objc_super * _Nonnull super, SEL _Nonnull 
 
 OC在想一个对象发送消息时，runtime根据对象的isa指针找到对象的类，在该类的方法以及父类的方法列表中寻找方法执行，如果都找不到，则抛出异常。但是在此之前还可以通过runtime避免崩溃
 
-1. **Method resolution**
+1. **Method resolution** 动态添加实现
 
-​    **OC**运行时会调用 `+(BOOL)resolveInstanceMethod:` 或者 `+(BOOL)resolveClassMethod: `在该函数中可以为类添加实现。注：该方法只要返回NO 即使已经添加了实现也不会执行，返回YES会检查是否实现，实现也不会执行，到下一步：message forwarding。
+ **OC**运行时会调用 `+(BOOL)resolveInstanceMethod:` 或者 `+(BOOL)resolveClassMethod: `在该函数中可以为类添加实现。注：该方法只要返回NO 即使已经添加了实现也不会执行，返回YES会检查是否实现，实现也不会执行，到下一步：message forwarding。
 
-2. **fast forwarding**
+2. **fast forwarding** 快速转发
 
 OC通过类的 `-(id)forwardingTargetForSelector:` 将消息转发给其它对象。注：方法返回非nil、非self则将消息转发给某个对象。返回self死锁，返回nil，则到下一步：normal forwarding。
 
-3. **normal forwarding**
+3. **normal forwarding** 普通转发
 
 OC通过类的 `-(NSMethodSignature *)methodSignatureForSelector:` 方法获得函数的参数和返回值类型的函数签名。方法返回nil则报错。否则返回函数签名，并且系统创建NSInvocation对象，调用类的 -(void)forwardInvocation: 方法，在此方法中将消息转发出去。
 
