@@ -638,7 +638,7 @@ NSURLConnectionLoader 中的 RunLoop 通过一些基于 mach port 的 Source 接
 
 ### RunLoop 的实际应用举例
 
-#### 1. AsyncDisplayKit
+#### 1. AsyncDisplayKit（Texture）
 
 [AsyncDisplayKit](https://github.com/facebook/AsyncDisplayKit) 是 Facebook 推出的用于保持界面流畅性的框架，其原理大致如下：
 

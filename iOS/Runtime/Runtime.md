@@ -14,15 +14,10 @@
 ![Runtime_0](./Runtime_0.png)
 
 实例对象：`objc_object`结构体
-
 类对象：`objc_class`结构体（单例，用于创建实例对象，储存对象方法、实例变量）
-
 元类：`objc_class`结构体（单例，用于查找类方法，使其机制与对象查找方法一致）
-
 分类：`category_t`结构体（运行时添加到类的结构体中）
-
 协议：`protocol_t`结构体
-
 扩展：不是结构体，在编译时直接加到类中
 
 ```c
@@ -507,7 +502,7 @@ _class_createInstanceFromZone(Class cls, size_t extraBytes, void *zone,
 
 `rootDealloc`最终调用 `objc_destructInstance`，主要完成：
 
-1. 调用 C++ 西沟函数
+1. 调用 C++ 析构函数
 2. 调用 ARC 中实例变量的清理
 3. 移除相关对象引用
 4. clear 操作
@@ -809,7 +804,7 @@ OBJC_EXPORT void
 objc_msgSend(void /* id self, SEL op, ... */ );
 
 OBJC_EXPORT id _Nullable
-objc_msgSend(id _Nullable self, SEL _Nonnull op, ...);
+3456789 
 ```
 
 该函数有2个隐藏参数：`self`和`_cmd`，且不同类的同名方法中，`_cmd`是同一个对象。因为在`Runtime`中维护了一个`SEL`的表，这个表存储`SEL`不按照类来存储，只要相同的`SEL`就会被看做一个，并存储到表中。在项目加载时，会将所有方法都加载到这个表中，而动态生成的方法也会被加载到表中。
